@@ -1,0 +1,340 @@
+import mysql.connector
+
+class BancoDeDados:
+    def __init__(self, host, user, password, database):
+        self.host = host
+        self.user = user
+        self.password = password
+        self.database = database
+        self.conexao = None
+        self.cursor = None
+
+    def conectar(self):
+        try:
+            self.conexao = mysql.connector.connect(
+                host=self.host,
+                user=self.user,
+                password=self.password,
+                database=self.database
+            )
+            self.cursor = self.conexao.cursor(buffered=True)
+            print("Conexão estabelecida com sucesso.")
+        except mysql.connector.Error as err:
+            print(f"Erro ao conectar ao banco de dados: {err}")
+
+    def desconectar(self):
+        if self.conexao:
+            self.cursor.close()
+            self.conexao.close()
+            print("Conexão encerrada.")
+
+    def executar_query(self, query, dados=None):
+        try:
+            if dados:
+                self.cursor.execute(query, dados)
+            else:
+                self.cursor.execute(query)
+            self.conexao.commit()
+            return True
+        except mysql.connector.Error as err:
+            print(f"Erro ao executar a query: {err}")
+            return False
+        
+    def executar_fetchone_query(self, query, dados=None):
+        try:
+            if dados:
+                self.cursor.execute(query, dados)
+            else:
+                self.cursor.execute(query)
+            self.conexao.commit()
+            return self.cursor.fetchone()
+        except mysql.connector.Error as err:
+            print(f"Erro ao executar a query: {err}")
+            return False
+        
+    def listar_registros(self, query, dados=None):
+        try:
+            if dados:
+                self.cursor.execute(query, dados)
+            else:
+                self.cursor.execute(query)
+            return self.cursor.fetchall()
+        except mysql.connector.Error as err:
+            print(f"Erro ao listar registros: {err}")
+            return None
+
+class AppBancoDeDados:
+
+    # Inicialização do banco de dados
+    def __init__(self):
+        self.bd = BancoDeDados('localhost', 'root', 'mika123', 'python_teste')
+
+    # Apresentação do Menu para o usuário
+    def menu(self):
+        print("""
+        Determine a operação que gostaria de realizar
+        ---------------------------------------------
+        [1] = Criar usuário
+        [2] = Criar conta
+        [3] = Listar usuários
+        [4] = Listar contas
+        [5] = Depositar
+        [6] = Sacar
+        [7] = Extrato
+        [8] = Excluir conta
+        [9] = Finalizar
+        ---------------------------------------------
+        """)
+
+    # Criação do usuário com base nas informações passadas pelo usuário
+    def criar_usuario(self, nome, cpf, data_nascimento, idade, endereco):
+        query_cpf = "SELECT COUNT(*) FROM usuarios WHERE CPF = %s"
+        dados_cpf = (cpf,)
+        resultado = self.bd.executar_fetchone_query(query_cpf,dados_cpf)
+        if resultado and resultado[0] > 0 :
+            print("Já existe usuário com esse CPF cadastrado")
+            return False
+        else :
+            query = "INSERT INTO usuarios (nome, CPF, Data_de_Nascimento, Idade, Endereço) VALUES (%s, %s, %s, %s, %s)"
+            dados = (nome, cpf, data_nascimento, idade, endereco,)
+            
+            if self.bd.executar_query(query, dados):
+                return True
+            else:
+                print("Erro de conexão, por favor avalie a conexão com o banco de dados MySQL")
+                return False
+
+    # Criação da conta com base no CPF do usuário
+    def criar_conta (self,cpf,conta_corrente,agencia,saldo):
+        query_cpf = "SELECT COUNT(*) FROM usuarios WHERE CPF = %s"
+        dados_cpf = (cpf,)
+        resultado = self.bd.executar_fetchone_query(query_cpf,dados_cpf)
+        if resultado[0] > 0:
+            query = ("INSERT INTO conta (CC, Agência, SALDO, CPF)""VALUES (%s,%s,%s,%s)")
+            dados_conta = (conta_corrente,agencia,saldo,cpf,)
+            if self.bd.executar_query(query, dados_conta):
+                return True
+            else:
+                print("Erro de conexão, por favor avalie a conexão com o banco de dados MySQL")
+                return False
+        else:
+            print(f"Não existe usuário com o CPF informado: {cpf}")
+            return False
+
+    # Lista de usuários
+    def listar_usuarios(self,cpf=None):
+        if cpf is None:
+            query = "SELECT * FROM usuarios"
+            resultado = self.bd.listar_registros(query)
+        else:
+            query = "SELECT * FROM usuarios WHERE CPF = %s"
+            dados = (cpf,)
+            resultado = self.bd.listar_registros(query,dados)
+        if resultado is not None:
+            return resultado
+        else:
+            return False
+
+    # Lista as contas com base no CPF do usuário ou não
+    def listar_contas(self,cpf=None):
+        if cpf is None:
+            query = "SELECT * FROM conta"
+            resultado = self.bd.listar_registros(query)
+        else:
+            query = "SELECT * FROM conta WHERE CPF = %s"
+            dados = (cpf,)
+            resultado = self.bd.listar_registros(query,dados)
+        if resultado is not None:
+            return resultado
+        else:
+            return False
+
+    # Função para depósito de valores
+    def depositar(self,valor,conta_corrente):
+        tipo_transacao = "Depósito"
+        if valor > 0:
+            query_deposito = "UPDATE conta SET saldo = saldo + %s WHERE cc = %s"
+            query_transacao = "INSERT INTO transacoes (cc, tipo_transcacao, valor) VALUES (%s,%s,%s)"
+            deposito = (valor,conta_corrente)
+            transacao = (conta_corrente,tipo_transacao,valor)
+            if self.bd.executar_query(query_deposito,deposito) and self.bd.executar_query(query_transacao,transacao):
+                return True
+            else:
+                return False
+        else:
+            print("Valor de depósito é inválido, valor < 0")
+            return False
+    
+    # Função para saque de valores
+    def sacar (self,valor,conta_corrente):
+        tipo_transacao = "Saque"
+        if valor > 500:
+            print("Valor determinado para saque, excede o máximo permitido por saque")
+            return False
+        elif valor < 0:
+            print("Valor para saque é inválido, ou seja, valor menor que 0")
+            return False
+        else:
+            query_saldo = "SELECT saldo FROM conta WHERE cc = %s"
+            dados_saldo = (conta_corrente,)
+            saldo = self.bd.executar_fetchone_query(query_saldo,dados_saldo)[0]
+            if saldo < valor:
+                print(f"Valor que deseja sacar é maior que o saldo da conta:{saldo}")
+                return False
+            else:
+                query_saque = "UPDATE conta SET saldo = saldo - %s WHERE cc = %s"
+                query_transacao = "INSERT INTO transacoes (cc, tipo_transcacao, valor) VALUES (%s,%s,%s)"
+                dados_saque = (valor,conta_corrente)
+                dados_transacao = (conta_corrente,tipo_transacao,valor)
+                if self.bd.executar_query(query_saque,dados_saque) and self.bd.executar_query(query_transacao,dados_transacao):
+                    print("Saque realizado com sucesso")
+                    return True
+                else:
+                    print("Erro na execução")
+                    return False
+
+    # Função para mostrar extrato
+    def extrato(self, conta_corrente):
+        query = "SELECT * FROM transacoes WHERE cc = %s"
+        dados = (conta_corrente,)
+        valor = self.bd.listar_registros(query,dados)
+        if valor in None:
+            print("Erro na operação")
+            return False
+        else:
+            return valor
+
+    # Método para excluir conta 
+    def excluir_conta(self,conta_corrente):
+        query = "DELETE FROM conta WHERE cc = %s"
+        dados = (conta_corrente,)
+        if self.bd.executar_query(query,dados):
+            print("Conta excluída com sucesso")
+            return True
+        else:
+            print("Erro ao excluir conta")
+            return False
+
+    def main(self):
+        AGENCIA = "0001"
+        SALDO = 0
+        numero_conta = 1
+        self.bd.conectar()
+
+        while True:
+
+            self.menu()
+            opcao = input("Selecione uma opção: ")
+        
+            if opcao == '1': # Criar usuário
+                nome = input("Nome do usuário: ")
+                cpf = input("CPF do usuário: ")
+                data_nascimento = input("Data de nascimento: ")
+                idade = input("Idade: ")
+                endereco = input("Endereço: ")
+                if self.criar_usuario(nome, cpf, data_nascimento, idade, endereco):  
+                    print("Usuário criado com sucesso.")
+                else:
+                    print("Erro ao criar usuário.")
+
+            elif opcao == '2': # Criar a conta
+                cpf = input("CPF do usuário para criar a conta: ")
+                if self.criar_conta(cpf,numero_conta,AGENCIA,SALDO):
+                    print("Usuário criado com sucesso.")
+                    numero_conta += 1
+                else:
+                    print("Erro ao criar usuário.")
+            
+            elif opcao == '3': # Listar usuários
+
+                print("""
+                      Determine se quer listar todos os usuários, ou filtrar por um CPF
+                      -----------------------------------------------------------------
+                        [1] = Listar todos
+                        [2] = Listar por CPF específico
+                      -----------------------------------------------------------------
+                      """)
+                entrada = int(input("Selecione uma opção: "))
+                if entrada == 1:
+                    lista = self.listar_usuarios()
+                    for item in lista:
+                        print(item)
+                elif entrada == 2:
+                    cpf = input("Determine o CPF que deseja listar: ")
+                    lista = self.listar_usuarios(cpf)
+                    if lista is False:
+                        print("Problema ao encontrar o CPF fornecido, tente novamente")
+                    else:
+                        for item in lista:
+                            print(item)
+                else:
+                    print("Determine uma entrada válida")
+
+            elif opcao == '4': # Listar contas
+
+                print("""
+                      Determine se quer listar todas as contas, ou filtrar por um CPF
+                      -----------------------------------------------------------------
+                        [1] = Listar todos
+                        [2] = Listar por CPF específico
+                      -----------------------------------------------------------------
+                      """)
+                entrada = int(input("Selecione uma opção: "))
+                if entrada == 1:
+                    lista = self.listar_contas()
+                    for item in lista:
+                        print(item)
+                elif entrada == 2:
+                    cpf = input("Determine o CPF que deseja listar: ")
+                    lista = self.listar_contas(cpf)
+                    if lista is False:
+                        print("Problema ao encontrar o CPF fornecido, tente novamente")
+                    else:
+                        for item in lista:
+                            print(item)
+                else:
+                    print("Determine uma entrada válida")
+
+            elif opcao == '5': # Depósito
+                valor = float(input("Determine um valor para ser depositado na conta: "))
+                numero = input("Determine o número da conta que deseja depositar o valor: ")
+                if self.depositar(valor, numero):
+                    print("Depósito concluído com sucesso")
+                else:
+                    print("Erro ao depositar o valor")
+            
+            elif opcao == '6': # Saque
+                valor = float(input("Determine um valor para ser sacado da conta: "))
+                numero = input("Determina o número da conta que deseja realizar o saque: ")
+                if self.sacar(valor, numero):
+                    print("Valor sacado com sucesso")
+                else:
+                    print("Erro ao sacar o valor") 
+            
+            elif opcao == '7': # Extrato da conta
+                numero = input("Determine o número da conta corrente: ")
+                valor = self.extrato(numero)
+                if valor is False :
+                    print("Erro ao apresentar o extrato")
+                else:
+                    for item in valor:
+                        print(item)
+
+            elif opcao == '8': # Deletar conta
+                numero = input("Determine o número da conta corrente: ")
+                if self.excluir_conta(numero):
+                    print("Operação concluída com sucesso")
+                else:
+                    print("Erro na operação")
+
+            elif opcao == '9': # Pausa a execução de menu
+                break
+
+            else:
+                print("Valor de execução inválida, tente novamente")
+        
+        self.bd.desconectar()
+
+if __name__ == "__main__":
+    app = AppBancoDeDados()
+    app.main()
